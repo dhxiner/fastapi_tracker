@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
@@ -50,3 +50,28 @@ async def create_task(task: TaskCreate, db: AsyncSession = Depends(get_db)):
     await db.refresh(new_task)
     
     return {"message": "Задача успешно сохранена в PostgreSQL!", "task": new_task}
+
+# 3. ИЗМЕНИТЬ СТАТУС ЗАДАЧИ (Метод PATCH)
+# В URL мы передаем id конкретной задачи, которую хотим изменить, например: /tasks/1/complete
+@app.patch("/tasks/{task_id}/complete")
+async def complete_task(task_id: int, db: AsyncSession = Depends(get_db)):
+    # 1. Ищем задачу в базе данных по её ID
+    query = select(Task).where(Task.id == task_id)
+    result = await db.execute(query)
+    task = result.scalar_one_or_none() # Возвращает задачу или None, если её нет
+    
+    # 2. Если задача не найдена, возвращаем ошибку 404
+    if task is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="Задача с таким ID не найдена"
+        )
+    
+    # 3. Меняем статус на противоположный (или просто в True)
+    task.completed = True
+    
+    # 4. Сохраняем изменения в PostgreSQL
+    await db.commit()
+    await db.refresh(task)
+    
+    return {"message": "Статус задачи успешно обновлен!", "task": task}
