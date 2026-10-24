@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from pydantic import BaseModel
 
 # Импортируем настройки нашей базы данных и модель таблицы
@@ -75,3 +75,44 @@ async def complete_task(task_id: int, db: AsyncSession = Depends(get_db)):
     await db.refresh(task)
     
     return {"message": "Статус задачи успешно обновлен!", "task": task}
+
+# 4. ОЧИСТИТЬ ВСЕ ВЫПОЛНЕННЫЕ ЗАДАЧИ (Метод DELETE)
+# СТАТИЧЕСКИЙ адрес пишем ВЫШЕ, чтобы FastAPI не перепутал его с ID задачи
+@app.delete("/tasks/clear-completed")
+async def clear_completed_tasks(db: AsyncSession = Depends(get_db)):
+    # Формируем запрос: "Удалить из таблицы Task все записи, где completed == True"
+    query = delete(Task).where(Task.completed == True)
+    
+    # Выполняем удаление напрямую в базе данных
+    result = await db.execute(query)
+    await db.commit()
+    
+    # Считаем, сколько строк удалила база данных
+    deleted_count = result.rowcount
+    
+    return {
+        "message": "Очистка выполненных задач завершена успешно", 
+        "deleted_tasks_count": deleted_count
+    }
+
+
+# 5. УДАЛИТЬ ОДНУ КОНКРЕТНУЮ ЗАДАЧУ ПО ID (Метод DELETE)
+# ДИНАМИЧЕСКИЙ адрес со значением {task_id} пишем в самый низ
+@app.delete("/tasks/{task_id}")
+async def delete_task(task_id: int, db: AsyncSession = Depends(get_db)):
+    # Ищем задачу в БД
+    query = select(Task).where(Task.id == task_id)
+    result = await db.execute(query)
+    task = result.scalar_one_or_none()
+    
+    if task is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="Задача для удаления не найдена"
+        )
+    
+    # Удаляем конкретную найденную задачу
+    await db.delete(task)
+    await db.commit()
+    
+    return {"message": f"Задача с ID {task_id} успешно удалена из базы данных"}
